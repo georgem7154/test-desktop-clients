@@ -19,7 +19,7 @@ app = FastAPI(title="Tauri Sidecar API", version="1.0.0")
 # Enable CORS so the React frontend can talk to this server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins (simplest for local Tauri dev)
+    allow_origins=["*"],  # Allows all origins (si  mplest for local Tauri dev)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,6 +44,10 @@ def run_optimization(payload: OptimizeRequest):
     return {"message": f"Optimization requestessd for {payload.folder}"}
 
 
+@app.get('/health')
+def check():
+    print('this is a health check')
+    return {"msg":"started the server"}
 # --- PROCESS MANAGEMENT ---
 
 def force_exit():

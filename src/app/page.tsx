@@ -1,10 +1,8 @@
 "use client"
-import { useEffect, useState } from "react";
-// FIX: Using the singular import path to potentially resolve esbuild issues.
+import { useEffect, useState, useRef } from "react";
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
-// Define the expected JSON response type for safe TypeScript usage
 interface OptimizationResponse {
   message: string;
 }
@@ -12,54 +10,77 @@ interface OptimizationResponse {
 export default function Home() {
   const [logs, setLogs] = useState("");
   const [isOptimizing, setIsOptimizing] = useState(false);
-  // State to track if the Python server is confirmed to be running.
   const [isServerReady, setIsServerReady] = useState(false);
 
-  // 1. LISTEN FOR LOGS AND SERVER READY SIGNAL
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
+  const hasInitialized = useRef(false);
 
-    // Define an async function to encapsulate the sidecar logic
-    const setupListeners = async () => {
-      // Start the sidecar (always the first step)
-      await invoke("start_sidecar").catch(console.error);
+  // --- HEALTH CHECK POLLER ---
+  // Tries to connect to the backend every 1 second until successful
+  const waitForBackend = async () => {
+    let attempts = 0;
+    const maxAttempts = 30; // Stop after 30 seconds
 
-      // Listen for print statements from the Python sidecar
-      unlisten = await listen('sidecar-stdout', (event) => {
-        const message = String(event.payload);
-
-        // Check for the unique READY_SIGNAL from the Python sidecar
-        if (message.includes("READY_SIGNAL")) {
+    while (attempts < maxAttempts) {
+      try {
+        const res = await fetch("http://localhost:8008/health");
+        if (res.ok) {
           setIsServerReady(true);
-          setLogs(prev => prev + `\n[UI] Backend ready for requests.`);
+          setLogs(prev => prev + "\n[UI] ✅ Health check passed. Backend is ready.");
+          return; // Exit loop on success
         }
-
-        // Always log the output
-        setLogs(prev => prev + `\n${message}`);
-      });
-    };
-
-    // Initialize the setup
-    void setupListeners(); // Use 'void' to explicitly mark promise as intentionally not awaited/handled here
-
-    // Cleanup listener on unmount
-    // This return function must be synchronous, so we check for the defined unlisten function.
-    return () => {
-      if (unlisten) {
-        unlisten();
+      } catch (err) {
+        // Silent fail: server isn't ready yet, just wait and retry
       }
-    };
-  }, []); // Empty dependency array ensures this runs only once on mount
 
-  // 2. TRIGGER OPTIMIZATION
-  const handleOptimize = async () => {
-    if (!isServerReady) {
-      setLogs(prev => prev + "\n[UI] Error: Backend is not yet ready. Please wait.");
-      return;
+      attempts++;
+      // Wait 1 second before next try
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
+    setLogs(prev => prev + "\n[UI] ❌ Timeout: Backend failed to start.");
+  };
+
+  useEffect(() => {
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
+
+    let unlisten: (() => void) | undefined;
+
+    const setupLifecycle = async () => {
+      // 1. LISTEN FOR LOGS (Purely for debugging now)
+      unlisten = await listen('sidecar-stdout', (event) => {
+        const message = String(event.payload);
+        setLogs(prev => prev + `\n${message}`);
+      });
+
+      await listen('sidecar-stderr', (event) => {
+         const message = String(event.payload);
+         setLogs(prev => prev + `\n[PY-ERR] ${message}`);
+      });
+
+      // 2. START SIDECAR
+      setLogs(prev => prev + "\n[UI] Starting Sidecar...");
+      await invoke("start_sidecar").catch((err) => {
+        setLogs(prev => prev + `\n[UI] ❌ Failed to start sidecar: ${err}`);
+      });
+
+      // 3. START POLLING HEALTH ENDPOINT
+      setLogs(prev => prev + "\n[UI] Waiting for health check...");
+      await waitForBackend();
+    };
+
+    void setupLifecycle();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  const handleOptimize = async () => {
+    if (!isServerReady) return;
+
     setIsOptimizing(true);
-    setLogs(prev => prev + "\n[UI] Sending request to backend...");
+    setLogs(prev => prev + "\n[UI] Sending request...");
 
     try {
       const res = await fetch("http://localhost:8008/optimize", {
@@ -68,43 +89,37 @@ export default function Home() {
         body: JSON.stringify({ folder: "Downloads" })
       });
 
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
 
-      // FIX: Use explicit type cast to suppress 'any' value error
-      const data: OptimizationResponse = (await res.json()) as OptimizationResponse;
-
-      // FIX: Accessing message property is now safe due to the interface
+      const data = (await res.json()) as OptimizationResponse;
       setLogs(prev => prev + `\n[UI] Result: ${data.message}`);
     } catch (err) {
-      // FIX: Safely log the error object to avoid 'restrict-template-expressions' error
       setLogs(prev => prev + `\n[UI] Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsOptimizing(false);
     }
   };
 
-  // 3. SIMPLE UI
-  const buttonText = isServerReady
-    ? (isOptimizing ? "Optimizing..." : "Clean My Downloads Folder")
-    : "Waiting for Backend...";
-
   return (
     <main className="p-10 flex flex-col gap-5">
       <h1 className="text-2xl font-bold">Download Optimizer</h1>
 
       <button
-        // FIX: Wrap the async function call in a synchronous arrow function using 'void'
         onClick={() => { void handleOptimize(); }}
         disabled={isOptimizing || !isServerReady}
-        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+        className={`px-4 py-2 rounded text-white transition-all ${
+          isServerReady
+            ? "bg-blue-600 hover:bg-blue-700"
+            : "bg-gray-500 cursor-not-allowed"
+        }`}
       >
-        {buttonText}
+        {isServerReady
+          ? (isOptimizing ? "Optimizing..." : "Clean My Downloads Folder")
+          : "Starting Backend..."}
       </button>
 
-      <div className="bg-gray-900 text-green-400 p-4 rounded h-64 overflow-y-auto font-mono text-sm whitespace-pre-wrap">
-        {logs || "Waiting for backend to start..."}
+      <div className="bg-gray-900 text-green-400 p-4 rounded h-64 overflow-y-auto font-mono text-sm whitespace-pre-wrap border border-gray-700">
+        {logs || "Initializing..."}
       </div>
     </main>
   );
