@@ -27,6 +27,9 @@ jobs:
   # 1. Gets the application version for use in subsequent jobs and sets the stage for the release.
   setup:
     runs-on: ubuntu-latest
+    # FIX: Add permissions to the 'setup' job so it can create the release and tags.
+    permissions:
+      contents: write
     outputs:
       app_version: ${{ steps.get_version.outputs.version }}
       release_upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -156,7 +159,8 @@ jobs:
 
       - name: Process and Upload Assets
         env:
-          GITHUB_TOKEN: ${{ secrets.secrets.GITHUB_TOKEN }}
+          # FIX: Corrected typo in GITHUB_TOKEN environment variable here.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_UPLOAD_URL: ${{ needs.setup.outputs.release_upload_url }}
           APP_VERSION: ${{ needs.setup.outputs.app_version }}
         run: |
