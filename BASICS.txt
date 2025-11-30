@@ -1,0 +1,7 @@
+pnpm build:sidecar-linux
+pnpm build:sidecar-macos
+pnpm build:sidecar-winos
+
+pip install -r requirements.txt
+
+pnpm tauri dev
