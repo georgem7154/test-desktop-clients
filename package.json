@@ -4,16 +4,17 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
+    "install-reqs": "pnpm install && pip3 install -r requirements.txt",
+    "dev": "next dev",
     "build:sidecar-winos": "pyinstaller -c -F --clean --name main-x86_64-pc-windows-msvc --distpath src-tauri/bin/api src/backends/main.py",
     "build:sidecar-macos": "pyinstaller -c -F --clean --name main-aarch64-apple-darwin --distpath src-tauri/bin/api src/backends/main.py",
     "build:sidecar-linux": "pyinstaller -c -F --clean --name main-x86_64-unknown-linux-gnu --distpath src-tauri/bin/api src/backends/main.py",
+    "build:icons": "pnpm tauri icon public/app-icon.png",
+    "build": "next build",
+    "tauri": "tauri",
+    "export": "next export",
     "start": "next start",
-    "lint": "biome check && next lint",
-    "fix": "biome check --fix && next lint --fix",
-    "test": "vitest",
-    "tauri": "tauri"
+    "lint": "next lint"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
